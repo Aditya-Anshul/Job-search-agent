@@ -47,13 +47,88 @@ _STEALTH_JS = """
 
 async def create_browser() -> Tuple[Playwright, Browser]:
     """Launch a stealth Chromium browser with anti-detection flags."""
+    import os
+    import platform
+
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(
-        headless=settings.headless,
-        args=CHROMIUM_ARGS,
-    )
-    logger.debug(f"Browser Chromium launched: headless={settings.headless}")
-    return playwright, browser
+
+    # 1. If explicit path is provided, use it directly
+    executable_path = os.getenv("PLAYWRIGHT_CHROMIUM_PATH")
+    if executable_path:
+        logger.info(f"Stealth Browser: Using custom Chromium path from environment: {executable_path}")
+        browser = await playwright.chromium.launch(
+            headless=settings.headless,
+            args=CHROMIUM_ARGS,
+            executable_path=executable_path,
+        )
+        logger.debug(f"Browser Chromium launched: headless={settings.headless}")
+        return playwright, browser
+
+    # 2. Try default Playwright launch (uses downloaded Playwright binary)
+    try:
+        browser = await playwright.chromium.launch(
+            headless=settings.headless,
+            args=CHROMIUM_ARGS,
+        )
+        logger.debug(f"Browser Chromium launched via Playwright default: headless={settings.headless}")
+        return playwright, browser
+    except Exception as default_err:
+        logger.info(f"Default Playwright launch failed: {default_err}. Scanning system for system-wide Chromium/Chrome...")
+
+    # 3. System-wide scan fallback for all architectures
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    detected_path = None
+
+    if system == "linux":
+        for path in [
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium",
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/google-chrome-beta",
+            "/usr/bin/google-chrome-unstable",
+            "/snap/bin/chromium",
+            "/var/lib/flatpak/exports/bin/org.chromium.Chromium",
+        ]:
+            if os.path.exists(path):
+                detected_path = path
+                break
+    elif system == "darwin":  # macOS
+        for path in [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        ]:
+            if os.path.exists(path):
+                detected_path = path
+                break
+    elif system == "windows":
+        for path in [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+        ]:
+            if os.path.exists(path):
+                detected_path = path
+                break
+
+    if detected_path:
+        logger.info(f"Stealth Browser: Successfully detected system browser ({system}/{machine}): {detected_path}")
+        browser = await playwright.chromium.launch(
+            headless=settings.headless,
+            args=CHROMIUM_ARGS,
+            executable_path=detected_path,
+        )
+        logger.debug(f"Browser Chromium launched: headless={settings.headless}")
+        return playwright, browser
+    else:
+        # Re-raise the original Playwright error if no system browser was found
+        logger.error("Stealth Browser: No system-wide Chromium/Chrome found. Please install Chromium or set PLAYWRIGHT_CHROMIUM_PATH.")
+        raise default_err
+
+
 
 
 async def create_context(browser: Browser, storage_state: str = None) -> BrowserContext:
