@@ -1,0 +1,28 @@
+version: '3.9'
+
+services:
+  job-agent:
+    build: .
+    container_name: job_agent
+    restart: unless-stopped
+
+    # Loads .env WITHOUT baking secrets into the Docker image layer
+    env_file:
+      - .env
+
+    # Persistent bind-mount volumes — data survives container restarts
+    volumes:
+      - ./data:/app/data                        # SQLite database
+      - ./logs:/app/logs                        # Daily rotating log files
+      - ./resume/uploads:/app/resume/uploads    # Place resume.pdf here
+
+    # Uncomment below if using LLM_PROVIDER=ollama on host machine:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+# Usage:
+#   Build:           docker-compose build
+#   Test run now:    RUN_NOW=true docker-compose up
+#   Production:      docker-compose up -d
+#   View logs:       docker-compose logs -f
+#   Stop:            docker-compose down   (data preserved in ./data/)

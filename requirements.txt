@@ -1,0 +1,16 @@
+apscheduler
+fake_useragent
+PyMuPDF
+groq
+httpx
+loguru
+openai
+pandas
+playwright
+protobuf
+pydantic
+pydantic_settings
+python-dotenv
+python-telegram-bot
+python-docx
+SQLAlchemy

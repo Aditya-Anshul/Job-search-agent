@@ -1,0 +1,32 @@
+# ── CRITICAL: Secrets ────────────────────────────────────────────
+.env
+
+# ── Local Data (Docker volume bind-mounts) ───────────────────────
+data/
+logs/
+resume/uploads/
+
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── IDE / OS ─────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+*.swp
+*.swo
+
+# ── Playwright ───────────────────────────────────────────────────
+playwright/.local-browsers/
+
+# ── Docker ───────────────────────────────────────────────────────
+*.log
