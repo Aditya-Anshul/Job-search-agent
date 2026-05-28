@@ -4,7 +4,6 @@
 # ── Local Data (Docker volume bind-mounts) ───────────────────────
 data/
 logs/
-resume/uploads/
 
 # ── Python ───────────────────────────────────────────────────────
 __pycache__/
