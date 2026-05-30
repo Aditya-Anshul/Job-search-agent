@@ -252,6 +252,48 @@ async def _notify_application(listing: JobListing, match: dict, score: int) -> N
     await notify(msg)
 
 
+def _merge_and_save_profile(master_profile: dict, scraped_profile: dict):
+    """Merge scraped profile data from platforms into the master profile."""
+    if not scraped_profile:
+        return
+
+    # Use name if more complete
+    if scraped_profile.get("name") and len(scraped_profile["name"]) > len(master_profile.get("name", "")):
+        master_profile["name"] = scraped_profile["name"]
+
+    # Use designation
+    if scraped_profile.get("current_role"):
+        master_profile["current_role"] = scraped_profile["current_role"]
+
+    # Dynamically update experience if it's found and is greater than 0
+    scraped_exp = scraped_profile.get("experience_years", 0)
+    if scraped_exp > 0:
+        master_profile["experience_years"] = scraped_exp
+        # Dynamically override the configuration singleton so active search queries match actual experience!
+        settings.experience_years = scraped_exp
+        logger.info(f"Orchestrator: Dynamically updated settings.experience_years to {scraped_exp} based on profile scrapers.")
+
+    # Merge skills list uniquely
+    scraped_skills = scraped_profile.get("skills", [])
+    master_skills = master_profile.get("skills", [])
+    for skill in scraped_skills:
+        if skill.lower() not in [s.lower() for s in master_skills]:
+            master_skills.append(skill)
+    master_profile["skills"] = master_skills
+
+    # Save back to database
+    repo.save_profile(master_profile)
+
+    # Write to a persistent local json file for backup/persistence
+    try:
+        import json
+        with open("data/profile_master.json", "w") as f:
+            json.dump(master_profile, f, indent=4)
+        logger.info(f"Orchestrator: Saved unified master profile to 'data/profile_master.json'")
+    except Exception as err:
+        logger.warning(f"Could not save profile_master.json: {err}")
+
+
 async def run_agent() -> None:
     """Master agent loop — called by APScheduler at configured hour daily.
 
@@ -273,20 +315,43 @@ async def run_agent() -> None:
     resume_text = ""
     profile = _DEFAULT_PROFILE.copy()
 
+    # Load previously saved master profile if available to use actual experience & skills
+    import json
+    import os
+    if os.path.exists("data/profile_master.json"):
+        try:
+            with open("data/profile_master.json", "r") as f:
+                profile = json.load(f)
+            logger.info(f"Orchestrator: Loaded persistent master profile from 'data/profile_master.json' (Exp: {profile.get('experience_years')} yrs)")
+            # Sync settings singleton so active search queries match actual experience
+            settings.experience_years = float(profile.get("experience_years", settings.experience_years))
+        except Exception as load_err:
+            logger.warning(f"Orchestrator: Could not load persistent profile_master.json: {load_err}")
+
+    # Fallback/merge with fresh resume text if resume files exist
     try:
         resume_text = get_resume_text(settings.resume_pdf_path, settings.resume_docx_path)
-        profile = await _extract_profile(resume_text)
-        profile["raw_resume_text"] = resume_text
+        fresh_profile = await _extract_profile(resume_text)
+        fresh_profile["raw_resume_text"] = resume_text
+
+        # Merge: Keep master profile's high-fidelity values, or populate from fresh resume if missing
+        for key in ["name", "email", "phone", "skills", "experience_years", "current_role", "education", "certifications", "summary"]:
+            if key not in profile or not profile[key] or (key == "skills" and len(profile[key]) == 0):
+                profile[key] = fresh_profile.get(key)
+
         repo.save_profile(profile)
     except FileNotFoundError as e:
-        logger.error(f"Orchestrator resume not found: {e}")
-        await notify(
-            f"❌ *Run Failed*\n"
-            f"🔴 Error: Resume file not found\n"
-            f"💡 Fix: Add `resume.pdf` or `resume.docx` to `resume/uploads/`"
-        )
-        _save_run(stats, platforms_scraped, time.time() - start_time, "failed", str(e))
-        return
+        if not profile.get("name"): # No master profile either
+            logger.error(f"Orchestrator resume not found: {e}")
+            await notify(
+                f"❌ *Run Failed*\n"
+                f"🔴 Error: Resume file not found\n"
+                f"💡 Fix: Add `resume.pdf` or `resume.docx` to `resume/uploads/`"
+            )
+            _save_run(stats, platforms_scraped, time.time() - start_time, "failed", str(e))
+            return
+        else:
+            logger.warning(f"Orchestrator: Resume files not found. Relying strictly on persistent master profile: {e}")
 
     # Phase 2: Platform loop
     seen_ids: set = set()
@@ -329,7 +394,19 @@ async def run_agent() -> None:
                     logger.info(f"Orchestrator: Saved session state for {platform_name} to {session_path}")
                 except Exception as save_err:
                     logger.warning(f"Orchestrator: Could not save session state for {platform_name}: {save_err}")
-            if not logged_in:
+
+                # ── Profile Scraping Phase ────────────────────────────────
+                # Dynamically scrape details from user profile page to enrich resume data!
+                try:
+                    profile_page = await context.new_page()
+                    if hasattr(scraper, "scrape_profile"):
+                        logger.info(f"Orchestrator: Scraping profile data from {platform_name} to keep experience and skills updated...")
+                        scraped_profile = await scraper.scrape_profile(profile_page)
+                        _merge_and_save_profile(profile, scraped_profile)
+                    await profile_page.close()
+                except Exception as profile_err:
+                    logger.warning(f"Orchestrator: Profile scraping skipped/failed for {platform_name}: {profile_err}")
+            else:
                 logger.error(f"Orchestrator login failed for {platform_name} — skipping")
                 continue
 

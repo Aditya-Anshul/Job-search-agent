@@ -108,8 +108,56 @@ class NaukriScraper(BaseScraper):
         finally:
             await page.close()
 
+    async def scrape_profile(self, page) -> dict:
+        """Scrape profile details from Naukri.com logged in profile page."""
+        profile_data = {}
+        try:
+            logger.info("Naukri: Navigating to profile page...")
+            await page.goto("https://www.naukri.com/mnjuser/profile", wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(4)
 
+            # 1. Experience
+            exp_el = await page.query_selector(".expVal, .experience, span[class*='exp'], span:has-text('Year')")
+            if exp_el:
+                exp_text = await exp_el.text_content()
+                profile_data["experience_raw"] = exp_text.strip()
+                # Parse years and months
+                import re
+                years_match = re.search(r'(\d+)\s*(?:Year|yr)s?', exp_text, re.IGNORECASE)
+                months_match = re.search(r'(\d+)\s*(?:Month|mo)s?', exp_text, re.IGNORECASE)
+                years = int(years_match.group(1)) if years_match else 0
+                months = int(months_match.group(1)) if months_match else 0
+                profile_data["experience_years"] = round(years + (months / 12.0), 1)
+                logger.info(f"Naukri Profile: Found experience '{exp_text.strip()}' -> parsed as {profile_data['experience_years']} years")
 
+            # 2. Key Skills
+            skills_els = await page.query_selector_all(".keySkills .chip, .skill-chip, [class*='skill'] .chip, span.tag, .keySkills span")
+            skills = []
+            for sel in skills_els:
+                text = (await sel.text_content()).strip()
+                if text and text not in skills:
+                    skills.append(text)
+            if skills:
+                profile_data["skills"] = skills
+                logger.info(f"Naukri Profile: Found {len(skills)} skills: {skills[:5]}...")
+
+            # 3. Designation/Current Role
+            role_el = await page.query_selector(".infoCard .title, .infoCard h1, .designation, [class*='designation']")
+            if role_el:
+                role = (await role_el.text_content()).strip()
+                profile_data["current_role"] = role
+                logger.info(f"Naukri Profile: Found current role '{role}'")
+
+            # 4. Name
+            name_el = await page.query_selector(".infoCard .name, .userName, [class*='name']")
+            if name_el:
+                name = (await name_el.text_content()).strip()
+                profile_data["name"] = name
+                logger.info(f"Naukri Profile: Found name '{name}'")
+
+        except Exception as e:
+            logger.error(f"Naukri profile scraping failed: {e}")
+        return profile_data
 
     async def scrape_jobs(self, context: BrowserContext) -> List[JobListing]:
         """Scrape job listings for all configured role keywords."""

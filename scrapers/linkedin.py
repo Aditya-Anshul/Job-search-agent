@@ -106,6 +106,69 @@ class LinkedInScraper(BaseScraper):
         finally:
             await page.close()
 
+    async def scrape_profile(self, page) -> dict:
+        """Scrape profile details from LinkedIn logged in profile page."""
+        profile_data = {}
+        try:
+            logger.info("LinkedIn: Navigating to self profile...")
+            # LinkedIn redirects /me/profile/ to your own public profile URL
+            await page.goto("https://www.linkedin.com/me/profile/", wait_until="domcontentloaded", timeout=40000)
+            await asyncio.sleep(5)
+
+            # Scroll to load sections
+            for _ in range(3):
+                await page.evaluate("window.scrollBy(0, 500)")
+                await asyncio.sleep(1)
+
+            # 1. Name
+            name_el = await page.query_selector("h1.text-heading-xlarge, .pv-text-details__left-panel h1, h1")
+            if name_el:
+                name = (await name_el.text_content()).strip()
+                profile_data["name"] = name
+                logger.info(f"LinkedIn Profile: Found name '{name}'")
+
+            # 2. Headline/Current Role
+            headline_el = await page.query_selector(".text-body-medium, .pv-text-details__left-panel .text-body-medium")
+            if headline_el:
+                headline = (await headline_el.text_content()).strip()
+                profile_data["current_role"] = headline
+                logger.info(f"LinkedIn Profile: Found headline '{headline}'")
+
+            # 3. Experience Years calculation
+            import re
+            duration_els = await page.query_selector_all(".pvs-entity__sub-title, span[aria-hidden='true']")
+            total_months = 0
+            for el in duration_els:
+                text = await el.text_content()
+                # Match patterns like: "2 yrs 6 mos", "1 yr 3 mos", "8 mos", "2 years 6 months"
+                yrs_match = re.search(r'(\d+)\s*(?:yr|year)s?', text, re.IGNORECASE)
+                mos_match = re.search(r'(\d+)\s*(?:mo|month)s?', text, re.IGNORECASE)
+                if yrs_match or mos_match:
+                    yrs = int(yrs_match.group(1)) if yrs_match else 0
+                    mos = int(mos_match.group(1)) if mos_match else 0
+                    total_months += (yrs * 12) + mos
+
+            if total_months > 0:
+                profile_data["experience_years"] = round(total_months / 12.0, 1)
+                logger.info(f"LinkedIn Profile: Summed experience -> {profile_data['experience_years']} years")
+
+            # 4. Skills
+            skills_els = await page.query_selector_all(".pv-shared-text-with-see-more, span[aria-hidden='true']")
+            skills = []
+            for el in skills_els:
+                text = (await el.text_content()).strip()
+                # Filter out generic noise, collect capitalized/short phrases of skills
+                if text and len(text) < 40 and not any(k in text.lower() for k in ("see more", "present", "full-time", "part-time", "contract")):
+                    if text not in skills:
+                        skills.append(text)
+            if skills:
+                profile_data["skills"] = skills
+                logger.info(f"LinkedIn Profile: Found {len(skills)} potential skills")
+
+        except Exception as e:
+            logger.error(f"LinkedIn profile scraping failed: {e}")
+        return profile_data
+
     async def scrape_jobs(self, context: BrowserContext) -> List[JobListing]:
         """Scrape LinkedIn jobs for all keywords in settings."""
         all_listings = []

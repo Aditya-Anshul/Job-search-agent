@@ -55,8 +55,26 @@ async def send_email_with_report(recipient_email: str, file_path: str) -> bool:
         import asyncio
         loop = asyncio.get_event_loop()
         def _send():
+            import ssl
             server = smtplib.SMTP(smtp_host, smtp_port)
-            server.starttls()
+            try:
+                # Try secure STARTTLS first
+                server.starttls()
+            except ssl.SSLCertVerificationError as ssl_err:
+                logger.warning(
+                    f"SMTP STARTTLS: SSL verification failed ({ssl_err}). "
+                    f"Retrying with unverified context (essential for Android PRoot/UserLAnd)..."
+                )
+                unverified_context = ssl._create_unverified_context()
+                server.starttls(context=unverified_context)
+            except Exception as tls_err:
+                logger.warning(
+                    f"SMTP STARTTLS: TLS handshake failed ({tls_err}). "
+                    f"Retrying with unverified SSL context..."
+                )
+                unverified_context = ssl._create_unverified_context()
+                server.starttls(context=unverified_context)
+
             server.login(smtp_user, smtp_password)
             server.sendmail(smtp_user, recipient_email, msg.as_string())
             server.close()

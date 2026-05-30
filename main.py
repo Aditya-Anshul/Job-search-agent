@@ -27,6 +27,25 @@ async def main() -> None:
     for d in ["data", "logs", "resume/uploads", "artifacts", "temp"]:
         Path(d).mkdir(parents=True, exist_ok=True)
 
+    # ── SSL Certificate Diagnostic Check ──────────────────────────────────────
+    try:
+        import urllib.request
+        import ssl
+        # Check standard HTTPS connectivity to LLM APIs
+        urllib.request.urlopen("https://generativelanguage.googleapis.com", timeout=5)
+    except ssl.SSLCertVerificationError as ssl_err:
+        logger.error(
+            "\n" + "!" * 80 + "\n"
+            "⚠️  CRITICAL SSL DIAGNOSTIC WARNING\n"
+            "Secure HTTPS request to Gemini API failed due to SSL Certificate Verification error.\n"
+            "This is very common in Android UserLAnd or Termux PRoot Ubuntu containers due to missing system CA certificates.\n\n"
+            "👉 TO RESOLVE: Please run this command in your Ubuntu console to install root certificates:\n"
+            "   sudo apt update && sudo apt install -y ca-certificates && sudo update-ca-certificates\n"
+            "!" * 80 + "\n"
+        )
+    except Exception:
+        pass
+
     logger.info("=" * 60)
     logger.info("Job Agent starting up...")
     logger.info(f"Job Agent LLM provider: {settings.llm_provider}")
