@@ -8,11 +8,11 @@ from config.settings import settings
 from llm.base import BaseLLM, LLMResponse
 from utils.logger import logger
 
-_DEFAULT_MODEL = "mistralai/Mistral-7B-Instruct-v0.2:featherless-ai"
+_DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 _FALLBACK_MODELS = [
-    "meta-llama/Llama-3.1-8B-Instruct:novita",
-    "mistralai/Mistral-7B-Instruct-v0.3",
+    "meta-llama/Llama-3.1-8B-Instruct",
     "meta-llama/Llama-3.2-3B-Instruct",
+    "Qwen/Qwen2.5-72B-Instruct",
 ]
 
 

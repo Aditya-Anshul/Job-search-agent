@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     
     # Models
-    huggingface_model: str = "mistralai/Mistral-7B-Instruct-v0.3"
+    huggingface_model: str = "meta-llama/Llama-3.1-8B-Instruct"
     groq_model: str = "llama3-70b-8192"
     gemini_model: str = "gemini-1.5-flash"
     deepseek_model: str = "deepseek-chat"
