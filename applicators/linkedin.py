@@ -172,7 +172,8 @@ class LinkedInApplicator(BaseApplicator):
                     
                     # Check for error associated with this field
                     # Error is usually in a sibling or parent artdeco-inline-feedback--error
-                    parent_group = await el.evaluate_handle("el => el.closest('.jobs-easy-apply-form-section__grouping, .jobs-easy-apply-form-element')")
+                    parent_group_handle = await el.evaluate_handle("el => el.closest('.jobs-easy-apply-form-section__grouping, .jobs-easy-apply-form-element')")
+                    parent_group = parent_group_handle.as_element() if parent_group_handle else None
                     error_el = await parent_group.query_selector(".artdeco-inline-feedback--error") if parent_group else None
                     error_text = await error_el.inner_text() if error_el else ""
                     

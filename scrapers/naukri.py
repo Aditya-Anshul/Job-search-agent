@@ -42,22 +42,55 @@ class NaukriScraper(BaseScraper):
                 logger.info(f"Naukri already logged in. URL={page.url}")
                 return True
 
-            # Wait for the email input to appear (it's in DOM after initial render)
-            try:
-                await page.wait_for_selector("input#usernameField", timeout=15000, state="attached")
-            except Exception:
-                logger.warning(f"Naukri usernameField not found at {page.url}")
-                # Try alternate login page if redirected
-                if "mnj" in page.url:
-                    await page.goto("https://www.naukri.com/nlogin/login",
-                                    wait_until="domcontentloaded", timeout=20000)
+            # Check for Akamai bot detection block
+            title = await page.title()
+            body_text = await page.inner_text("body")
+            if "access denied" in title.lower() or "you don't have permission to access" in body_text.lower():
+                logger.error(
+                    "\n" + "!" * 80 + "\n"
+                    "⚠️  NAUKRI ACCESS DENIED: Akamai Bot Detection blocked the request (HTTP 403).\n"
+                    "Naukri uses strict browser fingerprinting that blocks automated headless browsers.\n\n"
+                    "👉 TO RESOLVE:\n"
+                    "   1. Update your .env file to set: HEADLESS=false\n"
+                    "   2. If running inside a headless server (VPS or Android UserLAnd), install Xvfb:\n"
+                    "      sudo apt update && sudo apt install -y xvfb\n"
+                    "      And run the agent using: xvfb-run python main.py\n" +
+                    "!" * 80 + "\n"
+                )
+                return False
+
+            # Define potential selectors for credentials fields (resilient fallbacks)
+            email_selectors = ["input#usernameField", "input[placeholder*='Email']", "input[placeholder*='Username']", "input[name='email']", "input[type='email']", "input[type='text']"]
+            password_selectors = ["input#passwordField", "input[placeholder*='Password']", "input[name='password']", "input[type='password']"]
+            submit_selectors = ['button[type="submit"]', "button:has-text('Login')", "button.btn-primary", ".login-button"]
+
+            # Wait for any of the email input selectors to appear
+            email_selector = None
+            for sel in email_selectors:
+                try:
+                    await page.wait_for_selector(sel, timeout=3000, state="attached")
+                    email_selector = sel
+                    break
+                except Exception:
+                    continue
+
+            if not email_selector:
+                logger.warning(f"Naukri email/username field not found. Trying alternate login URL...")
+                if "mnj" in page.url or "nlogin" not in page.url:
+                    await page.goto("https://www.naukri.com/nlogin/login", wait_until="domcontentloaded", timeout=20000)
                     await asyncio.sleep(3)
-                    try:
-                        await page.wait_for_selector("input#usernameField",
-                                                     timeout=10000, state="attached")
-                    except Exception:
-                        logger.error(f"Naukri usernameField still not found. URL={page.url}")
-                        return False
+                    for sel in email_selectors:
+                        try:
+                            await page.wait_for_selector(sel, timeout=3000, state="attached")
+                            email_selector = sel
+                            break
+                        except Exception:
+                            continue
+
+            if not email_selector:
+                logger.error("Naukri login fields could not be resolved. Please verify if the login page layout changed.")
+                await page.screenshot(path="artifacts/naukri_login_failed.png")
+                return False
 
             # Dismiss cookie/consent if present
             try:
@@ -66,26 +99,48 @@ class NaukriScraper(BaseScraper):
             except Exception:
                 pass
 
-            # Wait for fields explicitly
-            await page.wait_for_selector("input#usernameField", timeout=15000, state="attached")
-            
             # Fill credentials using human-like typing
-            email_el = await page.query_selector("input#usernameField")
+            email_el = await page.query_selector(email_selector)
             await email_el.click()
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Backspace")
             await asyncio.sleep(0.3)
             await page.keyboard.type(settings.naukri_email or "", delay=80)
             logger.debug("Naukri email typed")
             await asyncio.sleep(0.5)
 
-            pwd_el = await page.query_selector("input#passwordField")
+            # Resolve password field
+            password_selector = None
+            for sel in password_selectors:
+                if await page.query_selector(sel):
+                    password_selector = sel
+                    break
+
+            if not password_selector:
+                logger.error("Naukri password field not found.")
+                return False
+
+            pwd_el = await page.query_selector(password_selector)
             await pwd_el.click()
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Backspace")
             await asyncio.sleep(0.3)
             await page.keyboard.type(settings.naukri_password or "", delay=80)
             logger.debug("Naukri password typed")
             await asyncio.sleep(0.5)
 
             # Click the Login button
-            await page.click('button[type="submit"]')
+            submit_selector = None
+            for sel in submit_selectors:
+                if await page.query_selector(sel):
+                    submit_selector = sel
+                    break
+
+            if not submit_selector:
+                logger.error("Naukri login submit button not found.")
+                return False
+
+            await page.click(submit_selector)
             logger.debug("Naukri login button clicked")
 
 

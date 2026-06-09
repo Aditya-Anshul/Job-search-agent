@@ -35,6 +35,23 @@ class MonsterScraper(BaseScraper):
                 logger.success("Foundit already logged in")
                 return True
 
+            # Check for Akamai bot detection block
+            title = await page.title()
+            body_text = await page.inner_text("body")
+            if "access denied" in title.lower() or "you don't have permission to access" in body_text.lower():
+                logger.error(
+                    "\n" + "!" * 80 + "\n"
+                    "⚠️  FOUNDIT/MONSTER ACCESS DENIED: Akamai Bot Detection blocked the request (HTTP 403).\n"
+                    "Foundit/Monster uses strict browser fingerprinting that blocks automated headless browsers.\n\n"
+                    "👉 TO RESOLVE:\n"
+                    "   1. Update your .env file to set: HEADLESS=false\n"
+                    "   2. If running inside a headless server (VPS or Android UserLAnd), install Xvfb:\n"
+                    "      sudo apt update && sudo apt install -y xvfb\n"
+                    "      And run the agent using: xvfb-run python main.py\n" +
+                    "!" * 80 + "\n"
+                )
+                return False
+
             # Handle cookie consent
             for sel in ["button#onetrust-accept-btn-handler", ".cookie-accept", "#accept-recommended-btn-handler", ".btn-accept", "button:has-text('Okay')"]:
                 try:
