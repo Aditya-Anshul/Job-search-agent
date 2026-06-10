@@ -71,6 +71,8 @@ async def main() -> None:
     if run_now:
         logger.info("Job Agent RUN_NOW=true detected — executing immediately...")
         await run_agent()
+        logger.info("Job Agent run complete — exiting (RUN_NOW=true).")
+        return
     else:
         logger.info(
             "Job Agent waiting for scheduled run. "
