@@ -565,12 +565,16 @@ def _cleanup_temp_files() -> None:
             except Exception as e:
                 logger.warning(f"Failed to delete temp item {item}: {e}")
 
-    # 2. Clean artifacts directory (screenshots and other transient files)
+    # 2. Clean artifacts directory (screenshots and other transient files, but keep failed ones for debugging)
     artifacts_dir = Path("artifacts")
     if artifacts_dir.exists() and artifacts_dir.is_dir():
         for item in artifacts_dir.iterdir():
             try:
                 if item.is_file():
+                    # Keep screenshots of failed attempts for user debugging
+                    if item.suffix == ".png" and ("failed" in item.name or "exception" in item.name or "missing" in item.name or "unknown" in item.name):
+                        logger.info(f"Preserving failure debug screenshot: {item}")
+                        continue
                     item.unlink()
                     logger.debug(f"Deleted artifact file: {item}")
                 elif item.is_dir():
@@ -579,14 +583,8 @@ def _cleanup_temp_files() -> None:
             except Exception as e:
                 logger.warning(f"Failed to delete artifact item {item}: {e}")
 
-    # 3. Clean temporary Excel reports from data/
-    report_file = Path("data/job_applications_report.xlsx")
-    if report_file.exists() and report_file.is_file():
-        try:
-            report_file.unlink()
-            logger.debug(f"Deleted Excel report: {report_file}")
-        except Exception as e:
-            logger.warning(f"Failed to delete Excel report {report_file}: {e}")
+    # 3. Do NOT delete the Excel report in data/ so the user can inspect it after runs
+    logger.info("Preserved 'data/job_applications_report.xlsx' for manual review.")
 
     # 4. Clean logs directory (requires releasing loguru file handler lock)
     logs_dir = Path("logs")

@@ -136,29 +136,59 @@ async def create_context(browser: Browser, storage_state: str = None) -> Browser
 
     Each call creates an isolated context — never share contexts between platforms.
     """
-    default_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    try:
-        ua = UserAgent(os=["windows", "macos"], browsers=["chrome", "edge"])
-        user_agent = ua.random
-    except Exception as e:
-        logger.warning(f"fake-useragent failed: {e}. Using robust default User-Agent.")
-        user_agent = default_ua
+    import platform
+    system = platform.system().lower()
+    
+    # 1. Check if we are running in headed mode
+    is_headed = not settings.headless
+    
+    user_agent = None
+    if is_headed:
+        # In headed mode (including xvfb-run), do NOT override user agent to prevent 
+        # platform mismatch blocks (e.g. Windows User-Agent on Linux/ARM client).
+        logger.info("Stealth Browser: Running in headed mode, using native browser User-Agent to prevent fingerprint mismatches.")
+    else:
+        # In headless mode, we must spoof User-Agent to hide the 'HeadlessChrome' identifier
+        default_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        try:
+            # Match the host OS to prevent platform mismatch detections
+            if system == "linux":
+                ua_os = ["linux"]
+            elif system == "darwin":
+                ua_os = ["macos"]
+            else:
+                ua_os = ["windows", "macos"]
+                
+            ua = UserAgent(os=ua_os, browsers=["chrome", "edge"])
+            user_agent = ua.random
+        except Exception as e:
+            logger.warning(f"fake-useragent failed: {e}. Using robust default User-Agent for platform.")
+            if system == "linux":
+                user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            elif system == "darwin":
+                user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            else:
+                user_agent = default_ua
 
     viewport = random.choice(VIEWPORTS)
 
-    context = await browser.new_context(
-        viewport=viewport,
-        user_agent=user_agent,
-        locale="en-IN",
-        timezone_id="Asia/Kolkata",
-        extra_http_headers={"Accept-Language": "en-IN,en-GB;q=0.9,en;q=0.8"},
-        storage_state=storage_state,
-    )
+    context_args = {
+        "viewport": viewport,
+        "locale": "en-IN",
+        "timezone_id": "Asia/Kolkata",
+        "extra_http_headers": {"Accept-Language": "en-IN,en-GB;q=0.9,en;q=0.8"},
+        "storage_state": storage_state,
+    }
+    if user_agent:
+        context_args["user_agent"] = user_agent
+
+    context = await browser.new_context(**context_args)
 
     await context.add_init_script(script=_STEALTH_JS)
 
+    ua_log = user_agent if user_agent else "native browser UA"
     logger.debug(
-        f"Browser context created: UA={user_agent[:50]}... "
+        f"Browser context created: UA={ua_log[:50]}... "
         f"viewport={viewport['width']}x{viewport['height']}"
     )
     return context
