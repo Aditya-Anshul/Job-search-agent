@@ -35,8 +35,8 @@ def trigger_run():
     
     if is_linux and is_headed:
         if shutil.which("xvfb-run"):
-            logger.info("Daemon: Linux headed mode detected. Prepended 'xvfb-run' to automation context.")
-            cmd = ["xvfb-run", "--server-args=-screen 0 1920x1080x24"] + cmd
+            logger.info("Daemon: Linux headed mode detected. Prepended 'xvfb-run -a' to automation context.")
+            cmd = ["xvfb-run", "-a", "--server-args=-screen 0 1920x1080x24"] + cmd
         else:
             logger.warning("Daemon: Headless is false but 'xvfb-run' is not installed! Subprocess might crash if no display is available.")
 
